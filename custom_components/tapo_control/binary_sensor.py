@@ -49,7 +49,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     ]
 
     for uid in known_binary_sensor_uids:
-        binarySensors.append(TapoMotionSensor(uid, events, name, camData))
+        event = events.get_uid(uid)
+        binarySensors.append(TapoMotionSensor(uid, event, name, camData))
 
     # Add sound detection sensor if enabled
     if config_entry.data.get(ENABLE_SOUND_DETECTION):
@@ -131,11 +132,9 @@ class TapoMotionSensor(BinarySensorEntity):
     def __init__(self, uid: str, events, name: str, camData: dict):
         LOGGER.debug("TapoMotionSensor - init - UID: %s", uid)
         self.uid = uid
-        self.events = events
         self._name = name
         self._attributes = camData["basic_info"]
 
-        event = events.get_uid(uid)
         self._attr_unique_id = uid
         self._attr_name = f"{name} {event.name}" if event else f"{name} {uid.replace('_', ' ').title()}"
         self._attr_device_class = try_parse_enum(BinarySensorDeviceClass, event.device_class) if event else BinarySensorDeviceClass.MOTION
@@ -143,14 +142,13 @@ class TapoMotionSensor(BinarySensorEntity):
         self._attr_entity_registry_enabled_default = event.entity_enabled if event else True
         self._attr_is_on = event.value if event else False
         self._attr_enabled = event.entity_enabled if event else True
+        self._event = event
 
         super().__init__()
 
     @property
     def is_on(self) -> bool:
-        if (event := self.events.get_uid(self._attr_unique_id)) is not None:
-            return event.value
-        return self._attr_is_on
+        return self._event.value if self._event else False
 
     @property
     def name(self) -> str:
@@ -189,4 +187,5 @@ class TapoMotionSensor(BinarySensorEntity):
         return BRAND
 
     async def async_added_to_hass(self):
-        self.async_on_remove(self.events.async_add_listener(self.async_write_ha_state))
+        if self._event:
+            self.async_on_remove(self._event.events.async_add_listener(self.async_write_ha_state))
